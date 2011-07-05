@@ -13,7 +13,7 @@ Gem::Specification.new do |s|
   
   s.has_rdoc = true
   s.rdoc_options = ["--charset=UTF-8", "--main", "README.rdoc"]
-  s.extra_rdoc_files = ["README.rdoc"]
+  s.extra_rdoc_files = ["README.rdoc", 'MIT_LICENSE']
   
   s.add_dependency "activerecord", ">=3.0.0"
   s.add_development_dependency "rspec", ">2.0.0"
