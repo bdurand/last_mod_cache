@@ -1,0 +1,108 @@
+= LastModCache
+
+This module adds a simple caching layer on ActiveRecord models. Models must include a column that contains a timestamp of when the record was last modified (i.e. an +updated_at+ column). This timestamp will be used to automatically invalidate cache entries as records are modified so your cache is always up to date.
+
+== Example
+
+Any model that includes the LastModCache module will have several "with_cache" methods added for finding records with a caching layer.
+
+  class MyModelMigration < ActiveRecord::Migration
+    def self.up
+      create_table :my_models do |t|
+        t.string :name
+        t.integer :value
+        t.timestamps # Include the magical updated_at column
+      end
+      
+      # Very important: the updated_at column must be indexed in order to use the caching methods effectively.
+      # You will take a big performance hit if this isn't done.
+      add_index :my_models, :updated_at
+    end
+  end
+  
+  class MyModel < ActiveRecord::Base
+    include LastModCache
+  end
+  
+  # Rails 2 style finders with caching
+  MyModel.first_with_cache(:conditions => {:name => "test"})
+  MyModel.all_with_cache(:conditions => {:value => 0}, :limit => 10)
+  
+  # Rails 3 style finders with caching
+  MyModel.where(:name => "test").limit(10).with_cache
+  
+  # Find by ids with cache
+  MyModel.find_with_cache(100)
+  MyModel.find_with_cache([100, 101, 102])
+  
+  # Dynamic finders are also available in caching versions
+  MyModel.find_by_name_with_cache("test")
+  MyModel.find_all_by_name_and_value_with_cache("test", 4)
+
+== Configuring
+
+By default, the +updated_at+ column will be used for checking time stamps on your records. This can be overridden either by setting the +updated_at_column+ on your model.
+
+  class MyModel < ActiveRecord::Base
+    include LastModCache
+    self.updated_at_column = :last_modified_time
+  end
+
+It is very important that you have an index on the column being used since it will queried on directly as part of the caching algorithm.
+
+The default Rails.cache will be used if available. If you'd like to specify a different cache for your models, you can specify it by setting +last_mod_cache+ on your model.
+
+  class MyModel < ActiveRecord::Base
+    include LastModCache
+    self.last_mod_cache = ActiveSupport::Cache::MemoryStore.new
+  end
+
+The cache can be any implementation of ActiveSupport::Cache::CacheStore.
+
+== Performance Notes
+
+This module provides a very easy method of adding caching to your models, but not necessarily the most efficient. It is intended to provide a quick method of boosting performance and reducing database load. In critical sections of your code, you may want to handle caching differently.
+
+The response from all of the +with_cache+ methods will be a lazy loaded only be when necessary (similar to how the ActiveRecord 3 finder methods work). This allows them to interact nicely with other caching layers so that you're not loading records that are never used.
+
+The objects returned from the cache will be frozen. If you'll need to modify a record, don't use the cache.
+
+=== Eager Loading Associations
+
+Any eager loaded associations on the model will be loaded before the value is cached. This can really boost performance for complex data structures. However, associations are *not* included in the timestamp calculation, so use with caution since you could get stale associations from the cache. If your code is susceptible to this condition, you can work around it be providing a call back in you associated model that calls <tt>update_timestamp!</tt>.
+
+  class MyModel < ActiveRecord::Base
+    include LastModCache
+    has_many :my_associations
+  end
+  
+  class MyAssociation < ActiveRecord::Base
+    belongs_to :my_model
+    after_save do |record|
+      record.my_model.update_timestamp!
+    end
+  end
+
+=== Caching a single record
+
+When finding a single record with +first_with_cache+ or +find_with_cache+
+
+1. The database is queried to get the id and updated at timestamp on the record
+2. The id and timestamp are used to generate a cache key and the cache is checked
+3. If the key is not found in the cache, the database will be queried again for the record by id
+
+This will really only boost performance on records with many large columns or when you include associations to be cached with the record. You should verify that adding caching actually gives you a benefit.
+
+=== Caching multiple records
+
+When finding multiple records with +all_with_cache+ or +with_cache+
+
+1. The database is queried for the maximum value in the updated at column and the count of the number of rows in the table
+2. This is used to generate a cache key and the cache is checked
+3. If the key is not found in the cache, the database query will be done and the results will be cached
+
+This can give a pretty good performance boost especially for things like getting all the values in a small table to display in a view. If the table is updated frequently, the benefits will be reduced because any updates to the table will invalidate all the cache entries.
+
+=== MySQL Timestamp Accuracy
+
+Since MySQL only stores datetimes with a precision of 1 second, there is a small possibility that stale data could be in the cache if a record is updated twice within one second and in between is read into the cache. All the other major databases use much higher precision on timestamps and are not affected by this issue. As a work around, you can use a FLOAT column for your timestamps instead of a DATETIME.
