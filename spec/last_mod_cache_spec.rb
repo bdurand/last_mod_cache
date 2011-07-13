@@ -451,7 +451,7 @@ describe LastModCache do
     it "should cache the result of a relation chain" do
       relation = LastModCache::Test::ModelOne.where(:name => ["one", "two"]).order("value DESC")
       relation.with_cache.should == [model_one_record_two, model_one_record_one]
-      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3, :sql => relation.to_sql, :bind_values => nil}
+      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3, :sql => relation.to_sql, :bind_values => []}
       Rails.cache.read(cache_key).should == [model_one_record_two, model_one_record_one]
       Rails.cache.write(cache_key, [model_one_record_one, model_one_record_three])
       relation.with_cache.should == [model_one_record_one, model_one_record_three]
@@ -481,18 +481,37 @@ describe LastModCache do
     end
   end
   
-  context "eager load associations" do
+  context "associations" do
     before :each do
-      model_one_record_one.widget = LastModCache::Test::Widget.create!(:name => "widget_1")
+      model_one_record_two.things.create(:name => "thing_0")
+      LastModCache::Test::Widget.create!(:name => "widget_0")
+      model_one_record_one.widget = widget
+      LastModCache::Test::Widget.create!(:name => "widget_2")
       model_one_record_one.things.create(:name => "thing_1")
       model_one_record_one.things.create(:name => "thing_2")
       model_one_record_one.save!
       model_one_record_one.reload
-      model_one_record_two
-      model_one_record_three
+      model_one_record_three.things.create(:name => "thing_3")
     end
     
+    let(:widget){ LastModCache::Test::Widget.create!(:name => "widget_1") }
     let(:includes){ [:widget, {:things => :widget}] }
+    
+    it "should cache has_many associations" do
+      model_one_record_one.things.with_cache.collect(&:name).sort.should == ["thing_1", "thing_2"]
+      cache_key = {:class => "LastModCache::Test::Thing", :method => :all_with_cache, :updated_at => LastModCache::Test::Thing.maximum(:updated_at).to_f, :row_count => 4, :sql => model_one_record_one.things.to_sql, :bind_values => []}
+      Rails.cache.read(cache_key).collect(&:name).sort.should == ["thing_1", "thing_2"]
+      Rails.cache.write(cache_key, [LastModCache::Test::Thing.new(:name => "thing_a")])
+      model_one_record_one.things.with_cache.collect(&:name).sort.should == ["thing_a"]
+    end
+    
+    it "should cache belongs_to associations" do
+      model_one_record_one.widget_with_cache.name.should == "widget_1"
+      cache_key = {:class => "LastModCache::Test::Widget", :method => :first_with_cache, :updated_at => widget.updated_at.to_f, :sql => model_one_record_one.association(:widget).scoped.limit(1).to_sql, :bind_values => []}
+      Rails.cache.read(cache_key).name.should == "widget_1"
+      Rails.cache.write(cache_key, LastModCache::Test::Widget.new(:name => "widget_a"))
+      model_one_record_one.widget_with_cache.name.should == "widget_a"
+    end
     
     it "should cache included associations when finding many records" do
       cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :conditions => {:name => "one"}, :include => includes, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3}
@@ -539,7 +558,7 @@ describe LastModCache do
     it "should cache included associations when finding with a Relation" do
       relation = LastModCache::Test::ModelOne.where(:name => "one").includes(includes)
       relation.with_cache.should == [model_one_record_one]
-      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3, :sql => relation.to_sql, :bind_values => nil}
+      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3, :sql => relation.to_sql, :bind_values => []}
       cached = Rails.cache.read(cache_key).first
       if cached.respond_to?(:association)
         cached.association(:widget).loaded?.should == true
@@ -554,7 +573,7 @@ describe LastModCache do
     it "should cache eager load associations when finding with a Relation" do
       relation = LastModCache::Test::ModelOne.where(:name => "one").eager_load(includes)
       relation.with_cache.should == [model_one_record_one]
-      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3, :sql => relation.to_sql, :bind_values => nil}
+      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3, :sql => relation.to_sql, :bind_values => []}
       cached = Rails.cache.read(cache_key).first
       if cached.respond_to?(:association)
         cached.association(:widget).loaded?.should == true
@@ -569,7 +588,7 @@ describe LastModCache do
     it "should cache preload associations when finding with a Relation" do
       relation = LastModCache::Test::ModelOne.where(:name => "one").preload(includes)
       relation.with_cache.should == [model_one_record_one]
-      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3, :sql => relation.to_sql, :bind_values => nil}
+      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3, :sql => relation.to_sql, :bind_values => []}
       cached = Rails.cache.read(cache_key).first
       if cached.respond_to?(:association)
         cached.association(:widget).loaded?.should == true
@@ -603,6 +622,28 @@ describe LastModCache do
     it "should handle missing methods" do
       proxy = LastModCache::Proxy.new{ Object.new }
       lambda{ proxy.not_a_method }.should raise_error(NoMethodError)
+    end
+  end
+  
+  context "SQL caching" do
+    before :each do
+      model_one_record_one
+    end
+    
+    it "should cache sql used for finding one record" do
+      LastModCache::Test::ModelOne.connection.cache do
+        LastModCache::Test::ModelOne.find_by_name_with_cache("one").should == model_one_record_one
+        LastModCache::Test::ModelOne.connection.should_not_receive(:select)
+        LastModCache::Test::ModelOne.find_by_name_with_cache("one").should == model_one_record_one
+      end
+    end
+    
+    it "should cache sql used for finding many record" do
+      LastModCache::Test::ModelOne.connection.cache do
+        LastModCache::Test::ModelOne.find_all_by_name_with_cache("one").should == [model_one_record_one]
+        LastModCache::Test::ModelOne.connection.should_not_receive(:select)
+        LastModCache::Test::ModelOne.find_all_by_name_with_cache("one").should == [model_one_record_one]
+      end
     end
   end
 end

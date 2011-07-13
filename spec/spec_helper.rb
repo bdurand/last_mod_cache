@@ -45,6 +45,8 @@ module LastModCache
     end
     
     class Thing < ActiveRecord::Base
+      include LastModCache
+      
       belongs_to :widget
       
       class << self
@@ -60,6 +62,7 @@ module LastModCache
     end
     
     class Widget < ActiveRecord::Base
+      include LastModCache
       class << self
         def setup
           connection.create_table(table_name) do |t|

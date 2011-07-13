@@ -4,13 +4,18 @@ module LastModCache
   extend ActiveSupport::Concern
   
   DYNAMIC_FINDER_METHOD_PATTERN = /^find_(all_)?by_(.+)_with_cache$/
+  ASSOCIATION_WITH_CACHE_PATTERN = /^(.+)_with_cache$/
   
   included do
     class_eval do
       class << self
+        # Alias class method_missing
         alias_method_chain(:method_missing, :last_mod_cache)
       end
     end
+    # Alias instance method missing
+    alias_method_chain(:method_missing, :last_mod_cache)
+    
     class_attribute :last_mod_cache, :updated_at_column, :instance_reader => false, :instance_writer => false
     self.last_mod_cache = Rails.cache if defined?(Rails)
     self.updated_at_column = :updated_at
@@ -29,14 +34,31 @@ module LastModCache
     #   BlogPosts.where(:blog_id => my_blog.id).order("published_at DESC").limit(20).with_cache
     def with_cache(cache_options = nil)
       raise NotImplementedError.new("LastModCache is not available on #{klass}") unless klass.include?(LastModCache)
-      bind_variables = nil
-      if respond_to?(:bind_values)
-        bind_variables = bind_values.collect do |column, value|
-          column.type_cast(value)
-        end
-      end
-      klass.all_with_cache(:sql => to_sql, :cache => cache_options, :bind_values => bind_variables) do
+      bind_variables = respond_to?(:bind_values) ? bind_values.collect{|column, value| column.type_cast(value)} : []
+      klass.all_with_cache(:sql => to_sql, :bind_values => bind_variables, :cache => cache_options) do
         to_a
+      end
+    end
+    
+    # Add +first_with_cache+ to the end of a relation chain to perform the find and store the results in cache.
+    # Options for cache storage can be set with the optional +cache_options+ parameter. This method is
+    # equivalent to calling +first+ on the relation so that no more relations can be chained after it is called.
+    #
+    # Example:
+    #
+    #   Blog.where(:name => "My Blog").first_with_cache
+    def first_with_cache(cache_options = nil)
+      raise NotImplementedError.new("LastModCache is not available on #{klass}") unless klass.include?(LastModCache)
+      limited_scope = limit(1)
+      conn = klass.connection
+      key_scope = limited_scope.select(["#{conn.quote_table_name(klass.table_name)}.#{conn.quote_column_name(klass.primary_key)} AS #{conn.quote_column_name('id')}", "#{conn.quote_table_name(klass.table_name)}.#{conn.quote_column_name(klass.updated_at_column)} AS #{conn.quote_column_name('updated_at')}"])
+      bind_variables = limited_scope.respond_to?(:bind_values) ? limited_scope.bind_values.collect{|column, value| column.type_cast(value)} : []
+      Proxy.new do
+        id, timestamp = klass.send(:id_and_updated_at, :sql => key_scope.to_sql, :bind_values => bind_variables)
+        record = last_mod_cache.fetch(klass.send(:updated_at_cache_key, :first_with_cache, {:sql => limited_scope.to_sql, :bind_values => bind_values}, timestamp), cache_options) do
+          limited_scope.where(klass.primary_key => id).first if id
+        end
+        record.freeze if record
       end
     end
   end
@@ -69,8 +91,8 @@ module LastModCache
       cache_options, options = extract_cache_options(options)
       conditions = options.delete(:conditions)
       Proxy.new do
-        id, timestamp = id_and_updated_at(conditions)
-        block ||= lambda{ all(options.merge(:limit => 1, :conditions => {:id => id})).first if id }
+        id, timestamp = id_and_updated_at(:conditions => conditions)
+        block ||= lambda{ all(options.merge(:limit => 1, :conditions => {primary_key => id})).first if id }
         record = last_mod_cache.fetch(updated_at_cache_key(:first_with_cache, options.merge(:conditions => conditions), timestamp), cache_options, &block)
         record.freeze if record
       end
@@ -86,9 +108,9 @@ module LastModCache
       cache_options, options = extract_cache_options(options)
       finder = lambda{ options.blank? ? find(id_or_ids) : find(id_or_ids, options) }
       if id_or_ids.is_a?(Array)
-        all_with_cache(options.merge(:conditions => {:id => id_or_ids}, :cache => cache_options), &finder)
+        all_with_cache(options.merge(:conditions => {primary_key => id_or_ids}, :cache => cache_options), &finder)
       else
-        first_with_cache(options.merge(:conditions => {:id => id_or_ids}, :cache => cache_options), &finder)
+        first_with_cache(options.merge(:conditions => {primary_key => id_or_ids}, :cache => cache_options), &finder)
       end
     end
     
@@ -146,11 +168,15 @@ module LastModCache
     end
     
     # Get the id and updated at value for the first row that matches the conditions.
-    def id_and_updated_at(conditions)
+    def id_and_updated_at(options)
       column = columns_hash[updated_at_column.to_s]
-      sql = "SELECT #{connection.quote_column_name(primary_key)} AS #{connection.quote_column_name('id')}, #{connection.quote_column_name(updated_at_column)} AS #{connection.quote_column_name('updated_at')} FROM #{connection.quote_table_name(table_name)}"
-      sql << " WHERE #{sanitize_sql_for_conditions(conditions)}" if conditions
-      result = connection.select_one(sql)
+      sql = options[:sql]
+      unless sql
+        sql = "SELECT #{connection.quote_column_name(primary_key)} AS #{connection.quote_column_name('id')}, #{connection.quote_column_name(updated_at_column)} AS #{connection.quote_column_name('updated_at')} FROM #{connection.quote_table_name(table_name)}"
+        sql << " WHERE #{sanitize_sql_for_conditions(options[:conditions])}" if options[:conditions]
+      end
+      # Support older versions for ActiveRecord that don't implement bind_values
+      result = (options[:bind_values].blank? ? connection.select_all(sql) : connection.select_all(sql, nil, options[:bind_values])).first
       if result
         updated_at = result['updated_at']
         updated_at = columns_hash[updated_at_column.to_s].type_cast(updated_at) if updated_at.is_a?(String)
@@ -202,6 +228,18 @@ module LastModCache
       conn = self.class.connection
       sql = self.class.send(:sanitize_sql, ["UPDATE #{conn.quote_table_name(self.class.table_name)} SET #{conn.quote_column_name(col_name)} = ? WHERE #{conn.quote_column_name(self.class.primary_key)} = ?", timestamp, id])
       conn.update(sql)
+    end
+
+    def method_missing_with_last_mod_cache(method, *args, &block) #:nodoc:
+      match = method.to_s.match(ASSOCIATION_WITH_CACHE_PATTERN)
+      association_name = match[1].to_sym if match
+      reflection = self.class.reflect_on_association(association_name) if association_name
+      if reflection && (reflection.belongs_to?)
+        association = association(association_name)
+        association.scoped.first_with_cache
+      else
+        method_missing_without_last_mod_cache(method, *args, &block)
+      end
     end
   end
   
