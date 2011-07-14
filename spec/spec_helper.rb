@@ -39,7 +39,7 @@ module LastModCache
     
     module PokeRecordValue
       def poke_column_value(id, column, value)
-        sql = ["UPDATE #{connection.quote_table_name(table_name)} SET #{connection.quote_column_name(column)} = ? WHERE id = ?", value, id]
+        sql = ["UPDATE #{connection.quote_table_name(table_name)} SET #{connection.quote_column_name(column)} = ? WHERE #{connection.quote_column_name(primary_key)} = ?", value, id]
         connection.update(sanitize_sql_array(sql))
       end
     end
@@ -119,12 +119,13 @@ module LastModCache
       extend PokeRecordValue
       include LastModCache
       self.updated_at_column = :last_modified
+      self.primary_key = "identifier"
       
       before_save{|r| r.last_modified = Time.now.to_f}
       
       class << self
         def setup
-          connection.create_table(table_name) do |t|
+          connection.create_table(table_name, :primary_key => :identifier) do |t|
             t.string :name
             t.integer :value
             t.float :last_modified

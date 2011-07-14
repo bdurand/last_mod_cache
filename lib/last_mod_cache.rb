@@ -234,9 +234,9 @@ module LastModCache
       match = method.to_s.match(ASSOCIATION_WITH_CACHE_PATTERN)
       association_name = match[1].to_sym if match
       reflection = self.class.reflect_on_association(association_name) if association_name
-      if reflection && (reflection.belongs_to?)
-        association = association(association_name)
-        association.scoped.first_with_cache
+      if reflection && (reflection.macro == :belongs_to)
+        foreign_key = reflection.respond_to?(:foreign_key) ? reflection.foreign_key : reflection.primary_key_name
+        reflection.klass.first_with_cache(:conditions => {(reflection.options[:primary_key] || reflection.klass.primary_key) => self[foreign_key]})
       else
         method_missing_without_last_mod_cache(method, *args, &block)
       end
@@ -245,7 +245,7 @@ module LastModCache
   
   # Proxy class that sends all method calls to a block.
   class Proxy #:nodoc:
-    required_methods = {"__send__" => true, "__id__" => true}
+    required_methods = {"__send__" => true, "__id__" => true, "object_id" => true}
     instance_methods.each do |m|
       undef_method(m) unless required_methods.include?(m.to_s)
     end

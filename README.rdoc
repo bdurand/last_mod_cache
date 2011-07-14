@@ -44,8 +44,9 @@ Any model that includes the LastModCache module will have several "with_cache" m
     include LastModCache
   end
   
-  MyModel.widget_with_cache # available if MyModel.belongs_to :widget
-  MyModel.wigets.with_cache # available if MyModel.has_many :widgets
+  MyModel.belongs_to :widget
+  
+  MyModel.first.widget_with_cache
 
 == Configuring
 

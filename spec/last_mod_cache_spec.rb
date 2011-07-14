@@ -280,20 +280,20 @@ describe LastModCache do
       model_one_record_one
       model_one_record_two
       model_one_record_three
-      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :first_with_cache, :conditions => {:id => model_one_record_two.id}, :updated_at => model_one_record_two.updated_at.to_f}
+      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :first_with_cache, :conditions => {"id" => model_one_record_two.id}, :updated_at => model_one_record_two.updated_at.to_f}
       LastModCache::Test::ModelOne.find_with_cache(model_one_record_two.id).should == model_one_record_two
       Rails.cache.read(cache_key).should == model_one_record_two
     end
     
     it "should find a single record by id from the cache" do
-      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :first_with_cache, :conditions => {:id => model_one_record_two.id}, :updated_at => model_one_record_two.updated_at.to_f}
+      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :first_with_cache, :conditions => {"id" => model_one_record_two.id}, :updated_at => model_one_record_two.updated_at.to_f}
       Rails.cache.write(cache_key, model_one_record_two)
       LastModCache::Test::ModelOne.poke_column_value(model_one_record_two.id, :value, 0)
       LastModCache::Test::ModelOne.find_with_cache(model_one_record_two.id).value.should == 2
     end
     
     it "should invalidate a single record by id cache entry when the record is modified" do
-      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :first_with_cache, :conditions => {:id => model_one_record_two.id}, :updated_at => model_one_record_two.updated_at.to_f}
+      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :first_with_cache, :conditions => {"id" => model_one_record_two.id}, :updated_at => model_one_record_two.updated_at.to_f}
       Rails.cache.write(cache_key, model_one_record_two)
       model_one_record_two.update_attribute(:value, 0)
       LastModCache::Test::ModelOne.find_with_cache(model_one_record_two.id).value.should == 0
@@ -303,27 +303,27 @@ describe LastModCache do
       model_one_record_one
       model_one_record_two
       model_one_record_three
-      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :conditions => {:id => [model_one_record_one.id, model_one_record_two.id]}, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3}
+      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :conditions => {"id" => [model_one_record_one.id, model_one_record_two.id]}, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3}
       LastModCache::Test::ModelOne.find_with_cache([model_one_record_one.id, model_one_record_two.id]).should == [model_one_record_one, model_one_record_two]
       Rails.cache.read(cache_key).should == [model_one_record_one, model_one_record_two]
     end
     
     it "should find multiple records by id from the cache" do
-      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :conditions => {:id => [model_one_record_one.id, model_one_record_two.id]}, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3}
+      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :conditions => {"id" => [model_one_record_one.id, model_one_record_two.id]}, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3}
       Rails.cache.write(cache_key, [model_one_record_one, model_one_record_two])
       LastModCache::Test::ModelOne.poke_column_value(model_one_record_one.id, :value, 0)
       LastModCache::Test::ModelOne.find_with_cache([model_one_record_one.id, model_one_record_two.id]).first.value.should == 1
     end
     
     it "should invalidate a multiple records by id cache entry when any record is modified" do
-      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :conditions => {:id => [model_one_record_one.id, model_one_record_two.id]}, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3}
+      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :conditions => {"id" => [model_one_record_one.id, model_one_record_two.id]}, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3}
       Rails.cache.write(cache_key, [model_one_record_one, model_one_record_two])
       model_one_record_one.update_attribute(:value, 0)
       LastModCache::Test::ModelOne.find_with_cache([model_one_record_one.id, model_one_record_two.id]).first.value.should == 0
     end
     
     it "should invalidate a multiple records by id cache entry when any record is deleted" do
-      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :conditions => {:id => [model_one_record_one.id, model_one_record_three.id]}, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3}
+      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :all_with_cache, :conditions => {"id" => [model_one_record_one.id, model_one_record_three.id]}, :updated_at => LastModCache::Test::ModelOne.maximum(:updated_at).to_f, :row_count => 3}
       Rails.cache.write(cache_key, [model_one_record_one, model_one_record_three])
 
       LastModCache::Test::ModelOne.poke_column_value(model_one_record_one.id, :value, 0)
@@ -356,7 +356,7 @@ describe LastModCache do
       model_one_record_two.reload
       LastModCache::Test::ModelTwo.find_with_cache(model_two_record_two.id).value.should == 2
       
-      cache_key = {:class => "LastModCache::Test::ModelTwo", :method => :first_with_cache, :conditions => {:id => model_two_record_two.id}, :updated_at => model_one_record_two.updated_at.to_f}
+      cache_key = {:class => "LastModCache::Test::ModelTwo", :method => :first_with_cache, :conditions => {"id" => model_two_record_two.id}, :updated_at => model_one_record_two.updated_at.to_f}
       LastModCache::Test.cache.write(cache_key, model_two_record_two.dup)
       LastModCache::Test::ModelTwo.poke_column_value(model_two_record_two.id, :value, 0)
       LastModCache::Test::ModelTwo.find_with_cache(model_two_record_two.id).value.should == 2
@@ -497,17 +497,9 @@ describe LastModCache do
     let(:widget){ LastModCache::Test::Widget.create!(:name => "widget_1") }
     let(:includes){ [:widget, {:things => :widget}] }
     
-    it "should cache has_many associations" do
-      model_one_record_one.things.with_cache.collect(&:name).sort.should == ["thing_1", "thing_2"]
-      cache_key = {:class => "LastModCache::Test::Thing", :method => :all_with_cache, :updated_at => LastModCache::Test::Thing.maximum(:updated_at).to_f, :row_count => 4, :sql => model_one_record_one.things.to_sql, :bind_values => []}
-      Rails.cache.read(cache_key).collect(&:name).sort.should == ["thing_1", "thing_2"]
-      Rails.cache.write(cache_key, [LastModCache::Test::Thing.new(:name => "thing_a")])
-      model_one_record_one.things.with_cache.collect(&:name).sort.should == ["thing_a"]
-    end
-    
     it "should cache belongs_to associations" do
       model_one_record_one.widget_with_cache.name.should == "widget_1"
-      cache_key = {:class => "LastModCache::Test::Widget", :method => :first_with_cache, :updated_at => widget.updated_at.to_f, :sql => model_one_record_one.association(:widget).scoped.limit(1).to_sql, :bind_values => []}
+      cache_key = {:class => "LastModCache::Test::Widget", :method => :first_with_cache, :updated_at => widget.updated_at.to_f, :conditions => {"id" => widget.id}}
       Rails.cache.read(cache_key).name.should == "widget_1"
       Rails.cache.write(cache_key, LastModCache::Test::Widget.new(:name => "widget_a"))
       model_one_record_one.widget_with_cache.name.should == "widget_a"
@@ -542,7 +534,7 @@ describe LastModCache do
     end
     
     it "should cache included associations when finding a record by id" do
-      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :first_with_cache, :conditions => {:id => model_one_record_one.id}, :include => includes, :updated_at => model_one_record_one.updated_at.to_f}
+      cache_key = {:class => "LastModCache::Test::ModelOne", :method => :first_with_cache, :conditions => {"id" => model_one_record_one.id}, :include => includes, :updated_at => model_one_record_one.updated_at.to_f}
       LastModCache::Test::ModelOne.find_with_cache(model_one_record_one.id, :include => includes).should == model_one_record_one
       cached = Rails.cache.read(cache_key)
       if cached.respond_to?(:association)
@@ -605,14 +597,20 @@ describe LastModCache do
     it "should proxy all methods except __id__" do
       proxy = LastModCache::Proxy.new{ nil }
       proxy.nil?.should == true
-      proxy.object_id.should == nil.object_id
       proxy.send(:nil?).should == true
-      proxy.__id__.should_not == nil.object_id
+      
+      proxy = LastModCache::Proxy.new{ "abc" }
+      proxy.nil?.should == false
+      proxy.size.should == 3
     end
     
     it "should only evaluate the block once" do
-      proxy = LastModCache::Proxy.new{ Object.new }
-      proxy.object_id.should == proxy.object_id
+      i = 0
+      obj = Object.new
+      proxy = LastModCache::Proxy.new{ i += 1; obj }
+      proxy.should == obj
+      proxy.nil?
+      i.should == 1
     end
     
     it "should lazy evaluate the block" do
