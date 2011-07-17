@@ -150,6 +150,15 @@ module LastModCache
       end
     end
     
+    # Get the maximum value in the updated at column and the count of all records in the database.
+    # This information can be used to generate self-expiring cache keys for models that change infrequently.
+    def max_updated_at_and_count
+      result = connection.select_one("SELECT MAX(#{connection.quote_column_name(updated_at_column)}) AS #{connection.quote_column_name('updated_at')}, COUNT(*) AS #{connection.quote_column_name('row_size')} FROM #{connection.quote_table_name(table_name)}")
+      updated_at = result['updated_at']
+      updated_at = columns_hash[updated_at_column.to_s].type_cast(updated_at) if updated_at.is_a?(String)
+      [updated_at, result['row_size'].to_i]
+    end
+    
     private
     
     # Construct a cache key based on a timestamp.
@@ -157,14 +166,6 @@ module LastModCache
       key = options.merge(:class => name, :method => method, :updated_at => timestamp.to_f)
       key[:row_count] = row_count if row_count
       key
-    end
-    
-    # Get the maximum value in the updated at column and the count of all records in the database.
-    def max_updated_at_and_count
-      result = connection.select_one("SELECT MAX(#{connection.quote_column_name(updated_at_column)}) AS #{connection.quote_column_name('updated_at')}, COUNT(*) AS #{connection.quote_column_name('row_size')} FROM #{connection.quote_table_name(table_name)}")
-      updated_at = result['updated_at']
-      updated_at = columns_hash[updated_at_column.to_s].type_cast(updated_at) if updated_at.is_a?(String)
-      [updated_at, result['row_size'].to_i]
     end
     
     # Get the id and updated at value for the first row that matches the conditions.

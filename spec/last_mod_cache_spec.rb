@@ -78,6 +78,28 @@ describe LastModCache do
     end
   end
   
+  context "cache key information" do
+    it "should get the maximum updated at timestamp and the count of all rows in a table" do
+      model_one_record_one
+      model_one_record_two
+      model_one_record_two.updated_at.should_not be_nil
+      LastModCache::Test::ModelOne.max_updated_at_and_count.should == [model_one_record_two.updated_at, 2]
+      
+      model_one_record_three
+      LastModCache::Test::ModelOne.max_updated_at_and_count.should == [model_one_record_three.updated_at, 3]
+    end
+    
+    it "should get the maximum updated at timestamp and the count of all rows in a table when using a custom timestamp column" do
+      model_four_record_one
+      model_four_record_two
+      model_four_record_two.last_modified.should_not be_nil
+      LastModCache::Test::ModelFour.max_updated_at_and_count.should == [model_four_record_two.last_modified, 2]
+      
+      model_four_record_three
+      LastModCache::Test::ModelFour.max_updated_at_and_count.should == [model_four_record_three.last_modified, 3]
+    end
+  end
+  
   context "find all" do
     before :each do
       model_one_record_one
